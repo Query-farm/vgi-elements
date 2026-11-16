@@ -46,7 +46,7 @@ CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
 INSTALL vgi FROM query_farm;
 LOAD vgi FROM query_farm;
 
-ATTACH 'elements' (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-elements@v0.1.1');
+ATTACH 'elements' (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-elements@v0.1.2');
 
 SELECT symbol, name, atomic_mass
 FROM elements.main.elements

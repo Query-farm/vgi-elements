@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "The periodic table, NIST isotopes and chemical formula molar masses as an offline VGI worker for DuckDB.",
