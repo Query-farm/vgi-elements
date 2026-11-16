@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-11-16)
+
+- Bump @query-farm/vgi to 0.50.1.
+
 ## 0.1.0 (unreleased)
 
 Initial release: bundled `elements` (118) and `isotopes` (3,352) tables from PubChem and NIST;
