@@ -15,16 +15,16 @@ import { field, type VgiDataType, type VgiField } from "@query-farm/vgi";
 export const CATALOG_NAME = "elements";
 export const VERSION = "0.1.0";
 
-export const SOURCE_URL = "https://github.com/your-org/vgi-elements";
+export const SOURCE_URL = "https://github.com/Query-farm/vgi-elements";
 
 /**
  * Categories group functions in docs and agent tools. Every object's
  * `vgi.category` must name one of these.
  */
 export const SCHEMA_CATEGORIES = [
-  { name: "text", title: "Text", description: "Functions that build or transform strings." },
-  { name: "generators", title: "Generators", description: "Table functions that generate rows." },
-  { name: "api", title: "REST APIs", description: "Table functions that read from HTTP APIs." },
+  { name: "reference", title: "Reference tables", description: "Bundled periodic-table and isotope data." },
+  { name: "lookup", title: "Element lookups", description: "Scalars that map symbols, names and numbers." },
+  { name: "formulas", title: "Chemical formulas", description: "Molar mass and composition of formulas." },
 ] as const;
 
 export type Category = (typeof SCHEMA_CATEGORIES)[number]["name"];
@@ -62,64 +62,93 @@ export function column(name: string, type: VgiDataType, comment: string, nullabl
 }
 
 export const CATALOG_DOC_LLM =
-  "An example VGI worker generated from the Query.Farm starter template. It shows the three shapes " +
-  "most workers need: a vectorized scalar function with an overload, a deterministic table " +
-  "function with a named default argument, and a table function that pages through a REST API with " +
-  "retries and an optional bearer token taken from a DuckDB secret or an environment variable. " +
-  "Replace them with your own functions; keep the metadata complete so agents can discover and " +
-  "call them.";
+  "Offline chemistry reference data for SQL: the periodic table of all 118 elements and NIST's table of 3,352 " +
+  "isotopes, bundled in the worker (no network, no key, deterministic). Reach for it to look up element " +
+  "properties (atomic mass, position in the table, category, electron configuration, electronegativity, " +
+  "radius, ionization energy, oxidation states, melting and boiling points, density, discovery year), to " +
+  "read nuclide masses and natural abundances, to convert between atomic numbers, symbols and names " +
+  "(case-insensitive), and to compute molar masses and mass percentages of chemical formulas with groups " +
+  "and hydrates. Element and isotope rows join on the atomic number. Lookup scalars return NULL for " +
+  "unknown input instead of failing. Atomic masses are in g/mol: the NIST standard atomic weight, the " +
+  "IUPAC conventional value for elements published as an interval (H 1.008, C 12.011, O 15.999), or the " +
+  "longest-lived isotope's mass for radioactive elements.";
+
+/** One plain paragraph shown as the worker's directory description (VGI107). */
+export const CATALOG_COMMENT =
+  "The periodic table and NIST isotope data as offline DuckDB tables, with element lookups and chemical " +
+  "formula molar-mass and composition functions. No network or API key needed.";
 
 export const CATALOG_DOC_MD =
-  "# VGI elements worker\n\n" +
-  "**An example [VGI](https://query.farm/vgi) worker that brings custom functions into DuckDB " +
-  "SQL.** It was generated from the Query.Farm starter template and is meant to be renamed and " +
-  "rewritten: every function here demonstrates one pattern you will reuse, from vectorized scalars " +
-  "and streaming table functions to a REST API reader that retries politely and reads a bearer " +
-  "token from a DuckDB secret or the environment.\n\n" +
-  "The worker speaks Apache Arrow to DuckDB over stdin/stdout, a Unix socket, or HTTP, so the " +
-  "same code runs as a local subprocess or a hosted service. See the " +
-  "[VGI documentation](https://query.farm/vgi/docs/) to learn more.";
+  "# VGI Elements\n\n" +
+  "Periodic-table and isotope reference data that runs entirely offline: every value is bundled in the " +
+  "worker, so queries are deterministic and need no network or key.\n\n" +
+  "## What you can do\n\n" +
+  "- Look up element properties by atomic number, symbol or name, and normalize messy element columns.\n" +
+  "- Compute molar masses of formulas such as `CuSO4·5H2O` or `K4[Fe(CN)6]`, and their mass percent.\n" +
+  "- Explore isotopes and natural abundances, joined to the elements on `atomic_number`.\n\n" +
+  "## Caveats\n\n" +
+  "Atomic masses are in g/mol. For the twelve elements IUPAC publishes as an interval (H, Li, B, C, N, O, " +
+  "Mg, Si, S, Cl, Br, Tl) the worker uses IUPAC's conventional single value; for radioactive elements " +
+  "without a standard atomic weight it uses the longest-lived isotope's mass. Group, period and block are " +
+  "derived from the atomic number. Superheavy-element properties are sparse or predicted. NIST's table is " +
+  "the vintage published on its site and can lag the latest IUPAC revisions.\n\n" +
+  "## Sources and references\n\n" +
+  "- [PubChem Periodic Table](https://pubchem.ncbi.nlm.nih.gov/periodic-table/) (NCBI/NLM): element " +
+  "properties.\n" +
+  "- [NIST Atomic Weights and Isotopic Compositions](https://www.nist.gov/pml/atomic-weights-and-isotopic-" +
+  "compositions-relative-atomic-masses): isotope masses, compositions and standard atomic weights.\n" +
+  "- [IUPAC CIAAW](https://www.ciaaw.org/atomic-weights.htm): conventional atomic weights.";
+
+export const SCHEMA_COMMENT =
+  "Periodic table and isotope reference tables, element lookup scalars and chemical formula functions.";
 
 export const SCHEMA_DOC_LLM =
-  "The `main` schema holds the starter template's example functions, one per common worker " +
-  "pattern. `greet(name)` and `greet(name, style)` are vectorized scalars: use them inside a " +
-  "projection or predicate, one result per row; `style` is a constant that must be 'casual' or " +
-  "'formal'. `sequence_table(count, step := 1)` is a deterministic table function that returns " +
-  "`count` rows of `(n, squared)`; use it for demos, tests, and as a template for generators. " +
-  "`fetch_items(base_url, page_size := 100)` reads every item from a paginated JSON REST API as " +
-  "`(id, name, category, price)` rows, streaming one page per batch, retrying rate-limited " +
-  "requests, and authenticating with a `elements_api` DuckDB secret or the `ELEMENTS_API_TOKEN` " +
-  "environment variable. Scalars cannot take named arguments; table functions can.";
+  "The only schema of the elements worker. Start with the elements table (one row per element, key " +
+  "atomic_number, unique symbol) or the isotopes table (key atomic_number + mass_number) and join them on " +
+  "atomic_number. The lookup scalars accept a column and are vectorized; the numeric overloads take an " +
+  "atomic number, the text overloads a symbol or English name in any case. Scalars have no named arguments. " +
+  "Use formula_mass for one molar mass per row, and formula_composition(formula) for an element-by-element " +
+  "breakdown of one constant formula.";
 
 export const SCHEMA_DOC_MD =
   "## main\n\n" +
-  "The starter template's example functions, one per common worker pattern.\n\n" +
-  "- **Scalars** answer one question per row and slot into a projection or predicate.\n" +
-  "- **Table functions** return sets of rows, streamed to DuckDB in Arrow batches.\n" +
-  "- **REST readers** page through an HTTP API and authenticate with a DuckDB secret.";
+  "Everything the worker exposes lives here: two bundled reference tables, element lookups and formula " +
+  "math.\n\n" +
+  "Tables are read by name with no arguments and join on `atomic_number`. Scalars work on whole columns, " +
+  "so they also clean up and join free-text element data.\n\n" +
+  "All values are a fixed offline snapshot of PubChem and NIST data; see the catalog documentation for " +
+  "how atomic masses are chosen.";
 
 export const AGENT_TEST_TASKS = [
-  { name: "formal_greeting", prompt: "Using the elements worker, greet the name 'Grace' formally." },
+  { name: "iron_mass", prompt: "Using the elements worker, what is the atomic mass of iron?" },
   {
-    name: "sum_of_squares",
-    prompt:
-      "Using the elements worker, what is the sum of the squared column for the first 10 rows " +
-      "of the sequence with the default step?",
+    name: "aspirin_mass",
+    prompt: "Using the elements worker, compute the molar mass of aspirin, C9H8O4, rounded to 2 decimals.",
   },
   {
-    name: "stepped_sequence",
-    prompt: "List the n values of a 4-row sequence that steps by 5, in ascending order.",
+    name: "noble_gases",
+    prompt: "List the symbols of the noble gases (group 18) in order of atomic number.",
   },
   {
-    name: "items_per_category",
+    name: "oxygen_isotopes",
     prompt:
-      "The items API is running at https://vgi-starter-api.query-farm.services/v1. How many items does it have in each category?",
+      "Which naturally occurring isotopes of oxygen exist? Give mass number and isotopic composition, by mass number.",
+  },
+  {
+    name: "normalize_symbols",
+    prompt:
+      "Map the free-text element values 'fe', 'GOLD' and 'na' to their atomic numbers, symbols and English names, ordered by atomic number.",
+  },
+  {
+    name: "hydrate_water_percent",
+    prompt:
+      "What percentage of the mass of copper(II) sulfate pentahydrate (CuSO4·5H2O) is hydrogen? Round to 2 decimals.",
   },
 ];
 
 export const CATALOG_TAGS: Record<string, string> = {
-  "vgi.title": "VGI Elements Worker",
-  "vgi.subtitle": "Example DuckDB functions to rename and replace: a scalar, a table function and a REST API reader.",
+  "vgi.title": "VGI Elements",
+  "vgi.subtitle": "The periodic table, isotopes and chemical formula molar masses as offline DuckDB SQL.",
   "vgi.doc_llm": CATALOG_DOC_LLM,
   "vgi.doc_md": CATALOG_DOC_MD,
   "vgi.source_url": SOURCE_URL,
@@ -127,17 +156,20 @@ export const CATALOG_TAGS: Record<string, string> = {
   "vgi.license": "0BSD",
   "vgi.author": "Query.Farm",
   "vgi.copyright": "Copyright 2026 Query.Farm LLC",
-  "vgi.keywords": keywordsArray("vgi, duckdb, starter template, example worker, rest api, table function"),
+  "vgi.keywords": keywordsArray(
+    "periodic table, chemical elements, isotopes, atomic mass, molar mass, chemical formula, chemistry, nist, pubchem",
+  ),
   "vgi.support_contact": `${SOURCE_URL}/issues`,
   "vgi.support_policy_url": `${SOURCE_URL}#support`,
-  // Public analyst tasks for `vgi-lint simulate`; private graders live in vgi-agent-tests.yaml.
   "vgi.agent_test_tasks": JSON.stringify(AGENT_TEST_TASKS),
 };
 
 export const SCHEMA_TAGS: Record<string, string> = {
-  "vgi.title": "Elements Functions",
-  domain: "examples",
-  "vgi.keywords": keywordsArray("greeting, sequence, generator, rest api, pagination"),
+  "vgi.title": "Elements, Isotopes and Formulas",
+  domain: "chemistry",
+  "vgi.keywords": keywordsArray(
+    "periodic table, element lookup, isotopes, formula mass, molecular weight, mass percent, stoichiometry",
+  ),
   "vgi.doc_llm": SCHEMA_DOC_LLM,
   "vgi.doc_md": SCHEMA_DOC_MD,
   "vgi.categories": JSON.stringify(SCHEMA_CATEGORIES),

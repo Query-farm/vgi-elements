@@ -1,16 +1,25 @@
 # Private graders for the public vgi.agent_test_tasks in the worker's catalog metadata.
-# `vgi-lint lint --ai` runs an agent on each prompt and grades it with check_sql.
-# See https://github.com/Query-farm/vgi-lint-check (VGI920).
+# `vgi-lint lint --ai` runs an agent on each prompt and grades it with reference_sql.
+# See https://github.com/Query-farm/vgi-lint-check (VGI920). All data is bundled, so
+# every grader is deterministic.
 tasks:
-  - name: formal_greeting
-    reference_sql: SELECT elements.main.greet('Grace', 'formal') AS greeting
-  - name: sum_of_squares
-    reference_sql: SELECT sum(squared) AS total FROM elements.main.sequence_table(10)
-  - name: stepped_sequence
-    reference_sql: SELECT n FROM elements.main.sequence_table(4, step := 5) ORDER BY n
-  # Reads the public demo API (https://vgi-starter-api.query-farm.services/v1).
-  - name: items_per_category
-    check_sql: >-
-      SELECT count(*) = 3 AND sum(items) = 25
-      FROM (SELECT category, count(*) AS items
-            FROM elements.main.fetch_items('https://vgi-starter-api.query-farm.services/v1') GROUP BY category)
+  - name: iron_mass
+    reference_sql: SELECT elements.main.atomic_mass('Fe') AS atomic_mass
+  - name: aspirin_mass
+    reference_sql: SELECT round(elements.main.formula_mass('C9H8O4'), 2) AS molar_mass
+  - name: noble_gases
+    reference_sql: SELECT symbol FROM elements.main.elements WHERE group_number = 18 ORDER BY atomic_number
+  - name: oxygen_isotopes
+    reference_sql: >-
+      SELECT mass_number, isotopic_composition FROM elements.main.isotopes
+      WHERE symbol = 'O' AND isotopic_composition IS NOT NULL ORDER BY mass_number
+  - name: hydrate_water_percent
+    reference_sql: >-
+      SELECT round(100 * mass_fraction, 2) AS hydrogen_percent
+      FROM elements.main.formula_composition('CuSO4·5H2O') WHERE element = 'H'
+  - name: normalize_symbols
+    reference_sql: >-
+      SELECT elements.main.atomic_number(v) AS atomic_number,
+             elements.main.element_symbol(elements.main.atomic_number(v)) AS symbol,
+             elements.main.element_name(v) AS name
+      FROM (VALUES ('fe'), ('GOLD'), ('na')) t(v) ORDER BY atomic_number

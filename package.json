@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A VGI worker for DuckDB, generated from the Query.Farm VGI starter template.",
+  "description": "The periodic table, NIST isotopes and chemical formula molar masses as an offline VGI worker for DuckDB.",
   "license": "0BSD",
   "scripts": {
     "typecheck": "tsc --noEmit",

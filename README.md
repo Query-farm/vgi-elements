@@ -1,295 +1,183 @@
-<!-- managed-by: vgi-starters (edit upstream in shared/README.md.tmpl, then run tools/render.py) -->
 <p align="center">
   <img src="https://query.farm/media-kit/products/vgi/vgi-logo.png" alt="Vector Gateway Interface (VGI)" width="320">
 </p>
 
-<p align="center"><em>A Query.Farm VGI worker for DuckDB, written in TypeScript.</em></p>
+<p align="center"><em>A Query.Farm VGI worker for DuckDB.</em></p>
 
-# VGI Elements Worker — TypeScript
+# Query the Periodic Table, Isotopes and Chemical Formula Masses in DuckDB
 
-[![CI](https://github.com/your-org/vgi-elements/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/vgi-elements/actions/workflows/ci.yml)
+> **vgi-elements** · a [Query.Farm](https://query.farm) VGI worker · written in TypeScript
+
+[![CI](https://github.com/Query-farm/vgi-elements/actions/workflows/ci.yml/badge.svg)](https://github.com/Query-farm/vgi-elements/actions/workflows/ci.yml)
 [![vgi worker: query.farm](https://query.farm/media-kit/shields/vgi-worker.svg)](https://query.farm)
 
-[VGI](https://query.farm/vgi) lets DuckDB call functions that live in a separate
-process: your code, in any language, exposed as ordinary SQL. This worker adds
-three example functions that you rename and replace with your own:
+All 118 chemical elements and NIST's 3,352 isotopes as SQL tables, plus element lookups and a
+chemical-formula parser that computes molar masses and mass percentages. Everything is bundled
+in the worker: no network, no API key, and the same answer every time.
 
-| Function | Kind | Shows you how to |
+```sql
+SELECT f, round(elements.main.formula_mass(f), 3) AS g_per_mol
+FROM (VALUES ('H2O'), ('C9H8O4'), ('CuSO4·5H2O')) t(f);
+-- H2O 18.015 · C9H8O4 180.159 · CuSO4·5H2O 249.677
+```
+
+| SQL interface | Kind | Returns |
 |---|---|---|
-| `greet(name)` / `greet(name, style)` | scalar | vectorize over a column, overload, constrain a constant |
-| `sequence_table(count, step := 1)` | table | stream rows in batches, take named arguments |
-| `fetch_items(base_url, page_size := 100)` | table | page through a REST API, retry, read a secret |
+| `elements.main.elements` | table | 118 rows: atomic mass, group/period/block, category, electron configuration, electronegativity, radius, ionization energy, electron affinity, oxidation states (`INTEGER[]`), state, melting/boiling point, density, discovery year, CPK colour |
+| `elements.main.isotopes` | table | 3,352 nuclides: mass number, relative atomic mass and uncertainty, natural isotopic composition |
+| `element_symbol(atomic_number)` | scalar | `'Fe'` for 26 |
+| `element_name(atomic_number)` / `element_name(symbol_or_name)` | scalar | `'Iron'` |
+| `atomic_mass(atomic_number)` / `atomic_mass(symbol_or_name)` | scalar | `55.845` (g/mol) |
+| `atomic_number(symbol_or_name)` | scalar | `26` for `'Fe'`, `'fe'` or `'Iron'` |
+| `formula_mass(formula)` | scalar | molar mass in g/mol |
+| `formula_composition(formula)` | table function | one row per element: `element`, `atomic_number`, `count`, `atomic_mass`, `mass`, `mass_fraction` |
 
+The two tables join on `atomic_number`. Text lookups are case-insensitive and accept
+`aluminium`/`aluminum`, `caesium`/`cesium` and `sulphur`/`sulfur`.
 
 ## Quick start
 
-**Prerequisites:** [Bun](https://bun.sh) 1.3+ and [uv](https://docs.astral.sh/uv/) (it runs the SQL
-test runner and the metadata checker).
-
-```bash
-make build
-```
-
-Then open DuckDB 2.0 or [Haybarn](https://query.farm/products/haybarn) and attach the
-worker. `LOCATION` is the command DuckDB runs to start it; use an absolute path,
-because a relative one resolves against DuckDB's working directory.
-
-**DuckDB 2.0:**
+DuckDB 2.0 can run a released worker directly from GitHub:
 
 ```sql
 SET allow_extension_repositories = 'allowed';
-CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm WITH PREFIX 'https://duckdb-extensions.query.farm';
+CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
+  WITH PREFIX 'https://duckdb-extensions.query.farm';
 INSTALL vgi FROM query_farm;
 LOAD vgi FROM query_farm;
+
+ATTACH 'elements' (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-elements@v0.1.0');
+
+SELECT symbol, name, atomic_mass
+FROM elements.main.elements
+WHERE group_number = 18
+ORDER BY atomic_number;
+```
+
+From a checkout ([Bun](https://bun.sh) 1.3+):
+
+```sh
+git clone https://github.com/Query-farm/vgi-elements.git && cd vgi-elements
+bun install --frozen-lockfile
+```
+
+```sql
 ATTACH 'elements' (TYPE vgi, LOCATION '/abs/path/to/vgi-elements/bin/vgi-elements-worker');
 ```
 
-**Haybarn 2.0** (`uvx haybarn-cli`):
+**Haybarn 2.0** (`uvx haybarn-cli`): `INSTALL vgi FROM community; LOAD vgi;` then the same `ATTACH`.
+
+Use an absolute path: `LOCATION` is the command DuckDB runs, resolved against its working
+directory.
+
+## Examples
 
 ```sql
-INSTALL vgi FROM community;
-LOAD vgi;
-ATTACH 'elements' (TYPE vgi, LOCATION '/abs/path/to/vgi-elements/bin/vgi-elements-worker');
+-- Mass percent of each element in aspirin
+SELECT element, count, round(100 * mass_fraction, 2) AS mass_percent
+FROM elements.main.formula_composition('C9H8O4')
+ORDER BY mass_percent DESC;
+
+-- Normalize a messy element column and join it to the periodic table
+SELECT s.raw, e.symbol, e.group_block
+FROM (VALUES ('fe'), ('Gold'), ('NA'), ('unobtainium')) s(raw)
+LEFT JOIN elements.main.elements e ON e.atomic_number = elements.main.atomic_number(s.raw);
+
+-- Natural isotopes of oxygen
+SELECT nuclide, isotopic_composition
+FROM elements.main.isotopes
+WHERE symbol = 'O' AND isotopic_composition IS NOT NULL
+ORDER BY mass_number;
+
+-- Molar masses of a column of formulas; invalid ones are NULL
+SELECT formula, elements.main.formula_mass(formula) AS g_per_mol FROM my_compounds;
 ```
 
-Now call the functions:
+## Behaviour and conventions
 
-```sql
-SELECT elements.main.greet('Ada');                         -- Hi, Ada!
-SELECT elements.main.greet('Ada', 'formal');               -- Good day, Ada.
-SELECT * FROM elements.main.sequence_table(5, step := 2) ORDER BY n;
-```
+**Atomic mass.** `atomic_mass` is a `DOUBLE` in g/mol. `atomic_mass_basis` says where each
+value comes from:
 
-`fetch_items` pages through a REST API. Try it against the public demo API (25 fixed items):
+- `standard_atomic_weight`: NIST's standard atomic weight (Fe `55.845(2)` → 55.845).
+- `conventional_atomic_weight`: the twelve elements IUPAC publishes as an interval (H, Li, B,
+  C, N, O, Mg, Si, S, Cl, Br, Tl) use IUPAC's conventional single value (H 1.008, C 12.011,
+  O 15.999, ...). The interval itself stays in `standard_atomic_weight`.
+- `longest_lived_isotope`: radioactive elements use the relative atomic mass of the isotope
+  NIST names in brackets (Tc `[98]` → 97.9072124), or PubChem's value where NIST assigns no
+  standard atomic weight (Am onward).
 
-```sql
-SELECT category, count(*) AS items, round(avg(price), 2) AS avg_price
-FROM elements.main.fetch_items('https://vgi-starter-api.query-farm.services/v1')
-GROUP BY category ORDER BY category;
-```
+`standard_atomic_weight` keeps NIST's published text: `55.845(2)`, `[12.0096,12.0116]`, `[98]`,
+or NULL.
 
-If an older cached extension misbehaves, refresh it with `FORCE INSTALL vgi FROM query_farm;`
-(DuckDB) or `FORCE INSTALL vgi FROM community;` (Haybarn).
+**Derived columns.** `group_number`, `period` and `block` are computed from the atomic number
+using the 18-column IUPAC layout. The lanthanides (La-Lu) and actinides (Ac-Lr) have a NULL
+`group_number` and block `f`.
 
-## Using it in a pipeline
+**Formulas.** Symbols are case-sensitive (`Co` is cobalt, `CO` is carbon monoxide). The parser
+accepts integer subscripts, nested `()`, `[]` and `{}` groups, a leading coefficient (`2H2O`)
+and hydrate parts joined by `·`, `•`, `*` or `.` (`CuSO4·5H2O`, `CuSO4*5H2O`). Whitespace is
+ignored. Charges, isotope labels (`D2O`, `13C`) and fractional subscripts are not supported.
 
-Worker functions compose with everything else in DuckDB:
+**Errors and NULLs.** Every scalar is NULL-in/NULL-out and returns **NULL** for an unknown
+element, an atomic number outside 1-118 or an invalid formula, so one bad row does not fail
+a whole query. `formula_composition` raises an **error** that names the problem and its
+position (`invalid formula "H2Q": unknown element symbol 'Q' at position 3`), so use it to find
+out why a formula was rejected.
 
-```sql
--- Materialize an API into a local table.
-CREATE TABLE items AS SELECT * FROM elements.main.fetch_items('https://vgi-starter-api.query-farm.services/v1');
+**Pushdown.** The tables are small and in memory (118 and 3,352 rows), so each scan returns
+the full table in one batch; DuckDB applies `WHERE` filters and the SDK applies projection
+pushdown. No filter is pushed to an upstream service because there is none at query time.
 
--- Join it with local files.
-SELECT i.name, i.price, s.units
-FROM items i JOIN 'sales.parquet' s ON s.item_id = i.id;
+**Browser-ready.** Runtime code has no native modules, no file reads and no network: the data
+is imported as JSON modules (`src/data/*.json`), so the worker can be bundled for
+[Haybarn WASM](https://query.farm/products/haybarn).
 
--- Call a scalar per row of another table.
-SELECT customer, elements.main.greet(customer, 'formal') FROM read_csv('customers.csv');
-```
+## Data sources and terms
 
-## Project layout
+The bundled data is built from two US-government public sources and IUPAC conventional values.
+[DATA-SOURCES.md](DATA-SOURCES.md) lists URLs, retrieval dates, checksums and licence notes.
 
-```
-src/
-  worker.ts        # entry point: serves the catalog over stdio, --unix or --http
-  catalog.ts       # assembles the catalog; add new functions to FUNCTIONS
-  meta.ts          # catalog/schema metadata + helpers (objectTags, column)
-  greet.ts         # scalar example (overloads, const param with choices)
-  sequence.ts      # table function example (named args, streaming state)
-  fetch_items.ts   # REST API table function (pagination, retries, secrets)
-  cli.ts           # flag parsing: stdio / --unix / --http (PORT:<n>, /health)
-  log.ts           # stderr logger
-bin/               # vgi-elements-worker (what DuckDB launches) and run-recipe
-tests/             # bun unit tests (worker subprocess + mock API)
-test/sql/          # sqllogictest files run through DuckDB
-test/mock_api/     # offline mock of the REST API used by tests
-examples/          # recipes: pushdown, caching, catalog tables, aggregates, COPY …
-ci/                # integration harness used by `make test-sql` and CI
-scripts/           # vgi_template.py (init / template-diff)
-vgi-agent-tests.yaml  # private graders for the agent test tasks
-```
+- [PubChem Periodic Table](https://pubchem.ncbi.nlm.nih.gov/periodic-table/) (NCBI, US National
+  Library of Medicine): element properties.
+- [NIST Atomic Weights and Isotopic Compositions](https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses)
+  (NIST Physical Measurement Laboratory): isotopes, compositions and standard atomic weights.
+- [IUPAC CIAAW](https://www.ciaaw.org/atomic-weights.htm): conventional atomic weights.
 
-## Adding a function
+These are factual reference values; upstream terms apply to the data separately from this
+worker's code licence. NIST's table is the edition currently on its site and can lag the latest
+IUPAC revisions (for example Ar, Pb and Yb).
 
-1. Create `src/<name>.ts`. Copy the closest example: `greet.ts` for a scalar,
-   `sequence.ts` for a generator, `fetch_items.ts` for an API.
-2. Declare arguments: `params` + `argDocs` (scalars), or the ordered `parameters`
-   list when a constant needs `choices`/`ge`/`le`. Table functions use `args`,
-   `argDocs` and `argConstraints`; an argument listed in `argDefaults` becomes a
-   named argument (`step := 2`), the others are positional.
-3. Give it `description`, `tags: objectTags(...)` (from `src/meta.ts`) and
-   `examples`.
-4. Add it to `FUNCTIONS` in `src/catalog.ts`.
+To refresh the bundle (maintainers): `make data` re-downloads the two files and rebuilds
+`src/data/*.json`; the unit tests fail if the committed JSON does not match a rebuild of
+`data/raw/`.
 
-**Which kind of function?**
-
-| You want to… | Use |
-|---|---|
-| compute one value per input row | a **scalar** function |
-| return a set of rows from arguments (an API, a file, a generator) | a **table** function |
-| transform or aggregate the rows of a query | a **table in-out** function or an **aggregate** |
-| expose a fixed dataset by name (`SELECT * FROM elements.main.t`) | a **catalog table** |
-| write data out to a file or service | `COPY … TO` with a copy function |
-| accept `INSERT` / `UPDATE` / `DELETE` | a catalog table with insert/update/delete functions |
-
-The [examples/](examples/) folder has a recipe for most of these. Writable tables have no
-recipe:
-
-A writable table is a `TableDescriptor` that names a table in-out function per operation in
-`insertFunction`, `updateFunction` and `deleteFunction`, with the richest result each one
-produces in `writeResultModes`. `writeOptions`, `writeResultSchema`, `writeResultBatch` and
-`rowIdField` (all exported by `@query-farm/vgi`) read DuckDB's `write_options` argument and
-build the result. UPDATE and DELETE need the table's scan `function` to emit `rowIdField()` and
-support projection pushdown. Transactions: return `supports_transactions` from the catalog's
-attach and override `transactionBegin` / `transactionCommit` / `transactionRollback`.
-Since VGI protocol 3.3 a table's scan and write functions are table-only: hidden from
-`duckdb_functions()` and not callable from SQL. Set `exposeScan: true` on the table to keep the
-scan callable as an ordinary table function too (write functions never are).
-[`examples/simple-writable-worker.ts`](https://github.com/Query-farm/vgi-typescript/blob/main/examples/simple-writable-worker.ts)
-and `examples/writable-tx-worker.ts` in vgi-typescript are complete workers.
-
-## Secrets and configuration
-
-`fetch_items` shows the recommended pattern. A bearer token comes from a DuckDB secret
-when one exists, and from an environment variable otherwise:
-
-```sql
-CREATE SECRET (TYPE elements_api, TOKEN 'your-token');      -- per session, never logged
-```
+## Development
 
 ```bash
-ELEMENTS_API_TOKEN=your-token make run-http                # for servers and containers
-```
-
-Try it: the demo API's `/v1/auth` endpoint needs the published token `demo-token`.
-
-```sql
-SELECT count(*) FROM elements.main.fetch_items('https://vgi-starter-api.query-farm.services/v1/auth');   -- fails: HTTP 401
-CREATE SECRET (TYPE elements_api, TOKEN 'demo-token');
-SELECT count(*) FROM elements.main.fetch_items('https://vgi-starter-api.query-farm.services/v1/auth');   -- 25
-```
-
-Never bake credentials into the image or the source. If a function can't run without
-real credentials, its examples can't execute in CI either. Set `execute: false` on the
-metadata check for that worker (see `.github/workflows/ci.yml`), and add
-`LINT_ARGS ?= --no-execute` to the Makefile so local runs match.
-
-## Testing
-
-```bash
-make test-unit                 # fast TypeScript unit tests
-make test-sql                  # test/sql/*.test through DuckDB (stdio)
-make test-sql TRANSPORT=http   # …over HTTP (also: launch)
+make test-unit                 # bun unit tests (offline)
+make test-sql                  # test/sql/*.test through DuckDB (stdio; TRANSPORT=launch|http)
+make lint-explain              # vgi-lint metadata check, examples executed
 make check                     # everything CI runs
 ```
 
-`test/sql/*.test` files are [sqllogictest](https://duckdb.org/docs/stable/dev/sqllogictest/intro)
-scripts. `ci/run-integration.sh` runs them against your worker and fails on any
-unexpected skip, so a broken transport can't hide behind a green run.
-`fetch_items` is tested against `test/mock_api/server.py` so tests are fast and
-offline.
-
-**Testing against real data:** put live tests in their own `.test` file that starts with
-`require-env ELEMENTS_LIVE`. They run only when that variable is set. Add the skip reason
-to `EXPECTED_SKIP_REASONS` in CI.
-
-## Metadata and the quality score
-
-DuckDB, agents and documentation tools discover your functions through their metadata:
-titles, descriptions, argument docs, examples and keywords.
-[vgi-lint](https://github.com/Query-farm/vgi-lint-check) checks it, and CI runs it on
-every push. Its settings live in `vgi-lint.toml`, which `make lint-explain`,
-`vgi-lint lint`, and CI all read. This template scores 100/100 with no findings.
-
-```bash
-make lint-explain                              # findings, each with its fix
-make lint-explain LINT_ARGS="--format agent"   # the same, grouped for coding agents
-make lint-ai                                   # optional: an agent must solve vgi-agent-tests.yaml
-```
-
-Each report also states an **assurance level**: how much was actually verified.
-
-| Level | Reached when | Here |
-|---|---|---|
-| L1 structural | the static metadata is clean | workers that need real credentials (`execute: false` in CI) |
-| L2 behavioural | the examples also run and return what they claim | **the CI gate** |
-| L3 semantic | an agent solves the worker's own test tasks, and the docs are reviewed | `make lint-ai`, before publishing |
-
-- **How strict.** Your copy fails on warnings (`fail_on = "warning"` in `vgi-lint.toml`).
-  Raise it to `"info"` before you publish the worker for others.
-- **The linter isn't pinned.** It tracks the current quality bar, so a new rule can flag
-  metadata that passed yesterday. Fix it, or waive the finding.
-- **Waivers.** If a finding is genuinely wrong for your worker, waive it in
-  `vgi-lint.toml` with a `kind` and a `reason`.
-- **Existing workers.** If you're adding this gate to a worker that already has
-  findings, record them with `vgi-lint lint --baseline vgi-lint-baseline --update-baseline`
-  and set `baseline` in `vgi-lint.toml`. After that, only new findings fail.
-
-Metadata lives in `src/meta.ts` and the `tags`/`examples` of each function.
-
-## Logging and debugging
-
-stdout carries the Arrow protocol, so **never print to stdout**. Log to stderr instead.
-Use `log` from `src/log.ts` (it writes to stderr); `--debug` or `--log-level debug` turns it up and also enables the SDK's own tracing (`VGI_DEBUG`).
-
-- Under DuckDB (stdio/launch), worker stderr shows up in DuckDB's error messages and
-  terminal.
-- In Docker it goes to `docker logs`.
-- `make debug` runs one query against the worker with debug logging on.
-
-## Deploying
-
-The same binary serves stdio (DuckDB starts it locally) or HTTP (you host it):
-
-```bash
-docker build -t weather-worker .
-docker run -p 8000:8000 -e ELEMENTS_API_TOKEN=... weather-worker   # health: GET /health
-```
-
-```sql
-ATTACH 'elements' (TYPE vgi, LOCATION 'https://workers.example.com/elements');
-```
-
-Put hosted workers behind TLS and authentication. See
-[authentication](https://query.farm/vgi/authentication) for bearer tokens and JWTs, and
-[distributing a worker](https://query.farm/vgi/distributing-a-worker) for packaging.
-Pass secrets with `-e` or your platform's secret manager.
+[AGENTS.md](AGENTS.md) describes the layout, the recipe for adding a function and the sharp
+edges.
 
 ## Releasing
 
-Push a tag like `v0.1.0`. The release workflow compiles the worker with `bun build --compile` into a standalone executable for Linux (x86-64, arm64), macOS (arm64) and Windows (x86-64), and attaches the archives to the GitHub release. Users download one file and point `LOCATION` at it, with no Bun or `node_modules` on the host. Every artifact is signed with cosign and
-carries SLSA build provenance. `ci/check-version.sh` makes sure the tag matches the
-version in `package.json`.
-
-## Using with coding agents
-
-[AGENTS.md](AGENTS.md) is written for AI coding agents (Claude Code reads it via
-`CLAUDE.md`; Codex, Cursor and others read it directly). It covers the commands, the
-recipe for adding a function, the metadata checklist and the sharp edges. A good first
-prompt:
-
-> Read AGENTS.md. Replace `fetch_items` with `forecast(lat DOUBLE, lon DOUBLE)` that calls
-> the Open-Meteo API. Include full metadata, a mock-server test and a `ELEMENTS_LIVE` test.
-> You're done when `make check` passes.
-
-## Keeping up with the template
-
-`make template-diff` shows what changed upstream (CI, docs, examples) since your copy was
-made. Your copy records its template version in `.vgi-elements.json`.
-
-## Learn more
-
-- [What is VGI?](https://query.farm/vgi) · [Getting started](https://query.farm/vgi/getting-started) · [Building a worker](https://query.farm/vgi/building-a-worker)
-- [TypeScript SDK docs](https://query.farm/vgi/docs/typescript/): [scalar tutorial](https://query.farm/vgi/docs/typescript/tutorial/scalar/), [table tutorial](https://query.farm/vgi/docs/typescript/tutorial/table/)
-- [Distributing a worker](https://query.farm/vgi/distributing-a-worker) · [Choosing a language](https://query.farm/vgi/languages) · [llms.txt](https://query.farm/vgi/llms.txt)
-- SDK source: [@query-farm/vgi](https://github.com/Query-farm/vgi-typescript) · RPC layer: [https://vgi-rpc-typescript.query.farm](https://vgi-rpc-typescript.query.farm)
+Push a tag like `v0.1.0`. The release workflow compiles the worker with `bun build --compile`
+into standalone executables for Linux (x86-64, arm64), macOS (arm64) and Windows (x86-64),
+signed with cosign and carrying SLSA build provenance. `ci/check-version.sh` makes sure the tag
+matches the version in `package.json`.
 
 ## Support
 
-Open an issue on this repository. For VGI itself, see [query.farm](https://query.farm).
+Open an issue on [this repository](https://github.com/Query-farm/vgi-elements/issues). For VGI
+itself, see [query.farm](https://query.farm).
 
-## Authorship & license
+## Authorship & License
 
-The starter template is written by [Query.Farm](https://query.farm) and released under
-the [BSD Zero Clause License](LICENSE) (0BSD). Use it for anything, with no attribution
-required. Replace this section with your own license once the code is yours.
+Written by [Query.Farm](https://query.farm). Released under the
+[BSD Zero Clause License](LICENSE) (0BSD).
+
+Copyright 2026 Query Farm LLC - https://query.farm

@@ -11,7 +11,7 @@ HAYBARN_UNITTEST := $(TOOLS)/bin/haybarn-unittest
 TRANSPORT       ?= stdio
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-unit test-sql test-sql-all lint lint-explain lint-ai fmt check run run-http debug tools template-diff clean
+.PHONY: data help build test test-unit test-sql test-sql-all lint lint-explain lint-ai fmt check run run-http debug tools template-diff clean
 
 help: ## List the targets
 	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z_-]+:.*## /{printf "  %-14s %s\n",$$1,$$2}' $(MAKEFILE_LIST)
@@ -63,6 +63,10 @@ debug: build tools ## Run one query against the worker with debug logging on std
 
 template-diff: ## Show upstream template changes since this project was created
 	uv run --no-project python scripts/vgi_template.py template-diff --stat
+
+data: ## Maintainers: re-download upstream data (2 requests) and rebuild src/data/*.json
+	bun run tools/fetch-data.ts
+	bun run tools/build-data.ts
 
 clean: ## Remove build outputs and tool caches
 	rm -rf node_modules .tools dist
