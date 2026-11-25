@@ -46,7 +46,7 @@ CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
 INSTALL vgi FROM query_farm;
 LOAD vgi FROM query_farm;
 
-ATTACH 'elements' (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-elements@v0.1.2');
+ATTACH 'elements' (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-elements@v0.2.0');
 
 SELECT symbol, name, atomic_mass
 FROM elements.main.elements
@@ -65,7 +65,7 @@ bun install --frozen-lockfile
 ATTACH 'elements' (TYPE vgi, LOCATION '/abs/path/to/vgi-elements/bin/vgi-elements-worker');
 ```
 
-**Haybarn 2.0** (`uvx haybarn-cli`): `INSTALL vgi FROM community; LOAD vgi;` then the same `ATTACH`.
+**Haybarn 2.0.1+** (`uvx haybarn-cli`; Haybarn 2.0.0 serves an older vgi extension that cannot attach this worker): `INSTALL vgi FROM community; LOAD vgi;` then the same `ATTACH`.
 
 Use an absolute path: `LOCATION` is the command DuckDB runs, resolved against its working
 directory.
